@@ -51,7 +51,7 @@ with wandb.init(mode="offline") as run:
 		embedding_dim = 128
 		hidden_dim = 512
 		training_epochs = 25
-		evaulation_samples = 100 # 1000
+		evaulation_samples = 1000
 		norm_rotate = False
 
 		ind = InD(
