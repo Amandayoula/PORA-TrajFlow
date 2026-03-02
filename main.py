@@ -13,13 +13,14 @@ from visualize_temp import visualize_temp
 
 should_train = False
 should_serialize = True
-should_evaluate = True
-should_visualize = False
+should_evaluate = False # True
+should_visualize = True
 simple_visualization = False
 verbose = False
 marginal = True
 
-with wandb.init() as run:
+# with wandb.init() as run:
+with wandb.init(mode="offline") as run:
 	run.config.setdefaults({
 		'seed': random.randint(0, 2**32 - 1),
 		'encoder': 'GRU',
@@ -50,7 +51,7 @@ with wandb.init() as run:
 		embedding_dim = 128
 		hidden_dim = 512
 		training_epochs = 25
-		evaulation_samples = 1000
+		evaulation_samples = 100 # 1000
 		norm_rotate = False
 
 		ind = InD(
