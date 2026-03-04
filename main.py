@@ -5,13 +5,14 @@ import torch
 from datasets.Dataset import Dataset
 from datasets.InD import InD
 from datasets.EthUcy import EthUcy
+from datasets.AV2 import AV2
 from model.TrajFlow import TrajFlow, CausalEnocder, Flow
 from train import train
 from evaluate import evaluate
 from visualize import visualize
 from visualize_temp import visualize_temp
 
-should_train = False
+should_train = True
 should_serialize = True
 should_evaluate = False # True
 should_visualize = True
@@ -25,7 +26,7 @@ with wandb.init(mode="offline") as run:
 		'seed': random.randint(0, 2**32 - 1),
 		'encoder': 'GRU',
 		'flow': 'DNF',
-		'dataset': 'InD',
+		'dataset': 'AV2',
 		'observation_site': 'zara2',
 		'masked_data_ratio': 0
 	})
@@ -80,6 +81,22 @@ with wandb.init(mode="offline") as run:
 			ethucy.zara2_observation_site if run.config.observation_site == 'zara2' else
         	ethucy.zara2_observation_site
     	)
+	elif dataset == Dataset.AV2:
+		seq_len = 50
+		input_dim = 2
+		feature_dim = 5
+		embedding_dim = 128
+		hidden_dim = 512
+		training_epochs = 25
+		evaulation_samples = 100
+		norm_rotate = False
+
+		av2 = AV2(
+			root="data/av2_mf_tiny",
+			train_ratio=0.8,
+			train_batch_size=64,
+			test_batch_size=1)
+		observation_site = av2.observation_site
 	else:
 		raise ValueError(f'{dataset.name} is not an experiment dataset')
 
