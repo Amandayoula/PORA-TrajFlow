@@ -11,6 +11,7 @@ from train import train
 from evaluate import evaluate
 from visualize import visualize
 from visualize_temp import visualize_temp
+from visualize_av2 import visualize_av2
 
 should_train = True
 should_serialize = True
@@ -87,7 +88,7 @@ with wandb.init(mode="offline") as run:
 		feature_dim = 5
 		embedding_dim = 128
 		hidden_dim = 512
-		training_epochs = 25
+		training_epochs = 5
 		evaulation_samples = 100
 		norm_rotate = False
 
@@ -97,6 +98,7 @@ with wandb.init(mode="offline") as run:
 			train_batch_size=64,
 			test_batch_size=1)
 		observation_site = av2.observation_site
+		av2_map_root = av2.root
 	else:
 		raise ValueError(f'{dataset.name} is not an experiment dataset')
 
@@ -177,15 +179,27 @@ with wandb.init(mode="offline") as run:
 		wandb.log({'rmse': rmse, 'crps': crps, 'min ade': min_ade, 'min fde': min_fde, 'nll': nll})
 
 	if should_visualize:
-		visualize(
-			observation_site=observation_site,
-			model=traj_flow,
-		 	num_samples=30,
-		 	steps=1000,
-		 	prob_threshold=0.001,
-		 	output_dir='visualization',
-		 	simple=simple_visualization,
-		 	device=device)
+		if dataset == Dataset.AV2:
+			visualize_av2(
+				observation_site=observation_site,
+				model=traj_flow,
+				map_root=av2_map_root,
+				num_samples=5,
+				steps=200,
+				prob_threshold=0.001,
+				output_dir='visualization',
+				simple=simple_visualization,
+				device=device)
+		else:
+			visualize(
+				observation_site=observation_site,
+				model=traj_flow,
+				num_samples=30,
+				steps=1000,
+				prob_threshold=0.001,
+				output_dir='visualization',
+				simple=simple_visualization,
+				device=device)
 		# visualize_temp(
 		# 	data_loader=observation_site.test_loader,
 		# 	model=traj_flow,
