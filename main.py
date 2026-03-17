@@ -16,7 +16,7 @@ from visualize_av2 import visualize_av2
 from visualize_av2_minimal import export_for_notebook
 
 
-should_train = False
+should_train = True
 should_serialize = True
 should_evaluate = True
 should_visualize = False
