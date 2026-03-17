@@ -107,7 +107,10 @@ class AV2:
 
         if os.path.exists(cache_path):
             print("Loading AV2 from cache...")
-            positions, features = torch.load(cache_path, map_location="cpu")
+            cache = torch.load(cache_path, map_location="cpu", weights_only=False)
+            positions = cache["positions"]
+            features = cache["features"]
+            spatial_boundaries = cache["spatial_boundaries"]
 
             # 重新构建 dataset / dataloader
             dataset = torch.utils.data.TensorDataset(positions, features)
@@ -209,7 +212,16 @@ class AV2:
         print(f"Total valid tracks: {len(positions)}")
         print("Saving AV2 cache...")
 
-        torch.save((positions, features), cache_path)
+        positions = torch.as_tensor(positions)
+        features = torch.as_tensor(features)
+        torch.save(
+            {
+                "positions": positions,
+                "features": features,
+                "spatial_boundaries": spatial_boundaries,
+            },
+            cache_path,
+        )
 
         return AV2ObservationSite(spatial_boundaries, train_loader, test_loader)
 
