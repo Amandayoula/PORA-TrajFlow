@@ -6,7 +6,7 @@ import torch
 from datasets.Dataset import Dataset
 from datasets.InD import InD
 from datasets.EthUcy import EthUcy
-from datasets.AV2 import AV2
+from datasets.AV2_parallel import AV2, AV2Dataset, AV2ObservationSite
 from model.TrajFlow import TrajFlow, CausalEnocder, Flow
 from train import train
 from evaluate import evaluate
@@ -23,6 +23,12 @@ should_visualize = False
 simple_visualization = False
 verbose = False
 marginal = True
+
+# AV2-specific switches
+# If True, main.py will NOT rebuild AV2 cache; it will load from an existing
+# .pt file and construct DataLoaders directly. You can change av2_cache_path.
+use_av2_cache_only = False
+av2_cache_path = "data/av2_mf_tiny/av2_cache_2000.pt"
 # with wandb.init() as run:
 with wandb.init(mode="offline") as run:
 	run.config.setdefaults({
@@ -91,21 +97,74 @@ with wandb.init(mode="offline") as run:
 		feature_dim = 6
 		embedding_dim = 128
 		hidden_dim = 512
+		train_ratio = 0.8
 		training_epochs = 100
 		evaulation_samples = 100
 		norm_rotate = False
 
-		av2 = AV2(
-			root="data/av2_mf_tiny",
-			train_ratio=0.8,
-			train_batch_size=64,
-			test_batch_size=1,
-			max_scenarios=100)
-		observation_site = av2.observation_site
-		print(len(observation_site.train_loader.dataset))
-		print(len(observation_site.test_loader.dataset))
-		
-		av2_map_root = av2.root
+		if use_av2_cache_only:
+			# ---- Load precomputed AV2 cache from a .pt file ----
+			# Expected format (as saved by datasets/AV2_parallel.py):
+			# {
+			#   "positions": (N, TOTAL_STEPS, 2) normalized to [0,1],
+			#   "features":  (N, HISTORY_STEPS, 6) with time channel,
+			#   "spatial_boundaries": (2, 2)
+			# }
+			print(f"Loading AV2 cache from: {av2_cache_path}")
+			cache = torch.load(av2_cache_path, map_location="cpu", weights_only=False)
+			positions = cache["positions"]
+			features = cache["features"]
+			spatial_boundaries = cache["spatial_boundaries"]
+
+			if not torch.is_tensor(positions):
+				positions = torch.as_tensor(positions)
+			if not torch.is_tensor(features):
+				features = torch.as_tensor(features)
+			if not torch.is_tensor(spatial_boundaries):
+				spatial_boundaries = torch.as_tensor(spatial_boundaries)
+
+			positions = positions.float()
+			features = features.float()
+			spatial_boundaries = spatial_boundaries.float()
+
+			# Ensure time channel is present (compatibility with older caches)
+			if features.ndim == 3 and features.shape[-1] == 5:
+				N = features.shape[0]
+				from datasets.AV2 import HISTORY_STEPS  # keep import local to avoid circular issues
+				t = torch.linspace(0.0, 2.0, HISTORY_STEPS).unsqueeze(0).unsqueeze(-1)
+				t = t.expand(N, HISTORY_STEPS, 1)
+				features = torch.cat([features, t], dim=-1)
+
+			dataset = AV2Dataset(positions, features)
+			train_size = int(len(dataset) * train_ratio)
+			test_size = len(dataset) - train_size
+			train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+
+			train_loader = torch.utils.data.DataLoader(
+				train_dataset, batch_size=64, shuffle=True
+			)
+			test_loader = torch.utils.data.DataLoader(
+				test_dataset, batch_size=1, shuffle=False
+			)
+
+			observation_site = AV2ObservationSite(spatial_boundaries, train_loader, test_loader)
+			print(len(observation_site.train_loader.dataset))
+			print(len(observation_site.test_loader.dataset))
+			
+			av2_map_root = "data/av2_mf_tiny"
+		else:
+			# Default path: construct AV2 object which will build or reuse cache internally.
+			av2 = AV2(
+				root="data/av2_mf_tiny",
+				train_ratio=train_ratio,
+				train_batch_size=64,
+				test_batch_size=1,
+				max_scenarios=None)
+			observation_site = av2.observation_site
+			print(len(observation_site.train_loader.dataset))
+			print(len(observation_site.test_loader.dataset))
+			
+			av2_map_root = av2.root
 	else:
 		raise ValueError(f'{dataset.name} is not an experiment dataset')
 
