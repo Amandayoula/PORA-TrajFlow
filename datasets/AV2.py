@@ -12,10 +12,18 @@ DT            = 0.1  # 10 Hz
 
 
 def normalize(data, boundaries):
+    if torch.is_tensor(data) or torch.is_tensor(boundaries):
+        data_t = data if torch.is_tensor(data) else torch.as_tensor(data)
+        b_t = boundaries if torch.is_tensor(boundaries) else torch.as_tensor(boundaries)
+        return (data_t - b_t[:, 0]) / (b_t[:, 1] - b_t[:, 0])
     return (data - boundaries[:, 0]) / (boundaries[:, 1] - boundaries[:, 0])
 
 
 def denormalize(data, boundaries):
+    if torch.is_tensor(data) or torch.is_tensor(boundaries):
+        data_t = data if torch.is_tensor(data) else torch.as_tensor(data)
+        b_t = boundaries if torch.is_tensor(boundaries) else torch.as_tensor(boundaries)
+        return (data_t * (b_t[:, 1] - b_t[:, 0])) + b_t[:, 0]
     return (data * (boundaries[:, 1] - boundaries[:, 0])) + boundaries[:, 0]
 
 
@@ -84,12 +92,13 @@ class AV2:
     DEFAULT_OBJECT_TYPES = ['vehicle']
 
     def __init__(self, root, train_ratio=0.8, train_batch_size=64, test_batch_size=1,
-                 object_types=None):
+                 object_types=None, max_scenarios=None):
         self.root              = root
         self.train_ratio       = train_ratio
         self.train_batch_size  = train_batch_size
         self.test_batch_size   = test_batch_size
         self.object_types      = object_types if object_types is not None else self.DEFAULT_OBJECT_TYPES
+        self.max_scenarios     = max_scenarios
         self._observation_site = None
 
     @property
@@ -103,17 +112,69 @@ class AV2:
     # ------------------------------------------------------------------
 
     def _load(self):
-        cache_path = os.path.join(self.root, "av2_cache.pt")
+        cache_tag = "all" if self.max_scenarios is None else str(int(self.max_scenarios))
+        cache_path = os.path.join(self.root, f"av2_cache_{cache_tag}.pt")
 
         if os.path.exists(cache_path):
             print("Loading AV2 from cache...")
-            cache = torch.load(cache_path, map_location="cpu", weights_only=False)
+            try:
+                # PyTorch 2.6+ defaults weights_only=True which rejects non-tensor pickles.
+                cache = torch.load(cache_path, map_location="cpu", weights_only=False)
+            except Exception as e:
+                print(f"Failed to load AV2 cache ({e}). Rebuilding cache...")
+                try:
+                    os.remove(cache_path)
+                except OSError:
+                    pass
+                return self._load()
             positions = cache["positions"]
             features = cache["features"]
             spatial_boundaries = cache["spatial_boundaries"]
 
-            # 重新构建 dataset / dataloader
-            dataset = torch.utils.data.TensorDataset(positions, features)
+            if not torch.is_tensor(positions):
+                positions = torch.as_tensor(positions)
+            if not torch.is_tensor(features):
+                features = torch.as_tensor(features)
+            if not torch.is_tensor(spatial_boundaries):
+                spatial_boundaries = torch.as_tensor(spatial_boundaries)
+
+            positions = positions.float()
+            features = features.float()
+            spatial_boundaries = spatial_boundaries.float()
+
+            # ---- Backward-compatible cache handling ----
+            # Older caches saved raw (unnormalized) positions/features without time channel.
+            # If we detect that, rebuild the cache to keep training/eval behavior consistent.
+            needs_rebuild = False
+
+            if positions.ndim != 3 or positions.shape[1:] != (TOTAL_STEPS, 2):
+                needs_rebuild = True
+            if features.ndim != 3 or features.shape[1] != HISTORY_STEPS or features.shape[2] not in (5, 6):
+                needs_rebuild = True
+
+            # If positions are not in [0, 1] range, likely unnormalized -> rebuild.
+            if not needs_rebuild:
+                pos_min = float(positions.min().item())
+                pos_max = float(positions.max().item())
+                if pos_min < -0.1 or pos_max > 1.1:
+                    needs_rebuild = True
+
+            if needs_rebuild:
+                print("AV2 cache looks outdated/incompatible. Rebuilding cache...")
+                try:
+                    os.remove(cache_path)
+                except OSError:
+                    pass
+                return self._load()
+
+            # If cache lacks time feature, append it (keeps compatibility with slightly older caches).
+            if features.shape[-1] == 5:
+                t = torch.linspace(0.0, 2.0, HISTORY_STEPS).unsqueeze(0).unsqueeze(-1)
+                t = t.expand(features.shape[0], HISTORY_STEPS, 1)
+                features = torch.cat([features, t], dim=-1)
+
+            # 重新构建 dataset / dataloader（保持与 main.py 期望一致：__getitem__ 返回 3-tuple）
+            dataset = AV2Dataset(positions, features)
 
             train_size = int(len(dataset) * self.train_ratio)
             test_size = len(dataset) - train_size
@@ -139,7 +200,11 @@ class AV2:
         if not os.path.isdir(train_dir):
             raise FileNotFoundError(f"Expected train split at: {train_dir}")
 
-        for scenario_id in sorted(os.listdir(train_dir)):
+        scenario_ids = sorted(os.listdir(train_dir))
+        if self.max_scenarios is not None:
+            scenario_ids = scenario_ids[: int(self.max_scenarios)]
+
+        for scenario_id in scenario_ids:
             scenario_dir = os.path.join(train_dir, scenario_id)
             if not os.path.isdir(scenario_dir):
                 continue
@@ -207,18 +272,20 @@ class AV2:
         test_dataset  = AV2Dataset(test_input,   test_feature)
 
         train_loader = DataLoader(train_dataset, batch_size=self.train_batch_size, shuffle=True)
-        test_loader  = DataLoader(test_dataset,  batch_size=self.test_batch_size,  shuffle=True)
+        test_loader  = DataLoader(test_dataset,  batch_size=self.test_batch_size,  shuffle=False)
 
         print(f"Total valid tracks: {len(positions)}")
         print("Saving AV2 cache...")
 
-        positions = torch.as_tensor(positions)
-        features = torch.as_tensor(features)
+        # Cache should store the exact tensors used by dataloaders (normalized + time feature),
+        # so cache-load reproduces the same training/eval behavior.
+        positions = torch.as_tensor(positions_norm).float()
+        features = features_with_time.float()
         torch.save(
             {
                 "positions": positions,
                 "features": features,
-                "spatial_boundaries": spatial_boundaries,
+                "spatial_boundaries": torch.as_tensor(spatial_boundaries).float(),
             },
             cache_path,
         )

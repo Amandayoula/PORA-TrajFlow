@@ -1,3 +1,4 @@
+import os
 import random
 import time
 import wandb
@@ -86,7 +87,8 @@ with wandb.init(mode="offline") as run:
 	elif dataset == Dataset.AV2:
 		seq_len = 50
 		input_dim = 2
-		feature_dim = 5
+		# AV2 features include an extra time channel appended in datasets/AV2.py
+		feature_dim = 6
 		embedding_dim = 128
 		hidden_dim = 512
 		training_epochs = 100
@@ -97,7 +99,8 @@ with wandb.init(mode="offline") as run:
 			root="data/av2_mf_tiny",
 			train_ratio=0.8,
 			train_batch_size=64,
-			test_batch_size=1)
+			test_batch_size=1,
+			max_scenarios=100)
 		observation_site = av2.observation_site
 		print(len(observation_site.train_loader.dataset))
 		print(len(observation_site.test_loader.dataset))
@@ -162,10 +165,17 @@ with wandb.init(mode="offline") as run:
 	if should_serialize:
 		#suffix = 'marginal' if marginal else 'joint'
 		#model_name = f'trajflow_{suffix}_{run.config.dataset}_{run.config.seed}.pt'
-		model_name = 'trajflow_GRU_DNF_marginal_ind.pt'
+		suffix = 'marginal' if marginal else 'joint'
+		model_name = f"trajflow_{run.config.encoder}_{run.config.flow}_{suffix}_{run.config.dataset}.pt"
 		if should_train:
 			torch.save(traj_flow.state_dict(), model_name)
-		traj_flow.load_state_dict(torch.load(model_name))
+		elif os.path.exists(model_name):
+			state = torch.load(model_name, map_location=device, weights_only=False)
+			model_state = traj_flow.state_dict()
+			compatible = {k: v for k, v in state.items() if k in model_state and getattr(v, "shape", None) == model_state[k].shape}
+			missing, unexpected = traj_flow.load_state_dict(compatible, strict=False)
+			if verbose:
+				print(f"loaded compatible keys: {len(compatible)}; missing: {len(missing)}; unexpected: {len(unexpected)}")
 
 	if should_evaluate:
 		rmse, crps, min_ade, min_fde, nll = evaluate(
