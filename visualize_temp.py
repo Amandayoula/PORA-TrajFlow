@@ -54,10 +54,10 @@ def generate_video(grid, pz_t1, prob_threshold,
         likelihood = np.where(likelihood < prob_threshold, np.nan, likelihood)
         generate_frame(x, y, likelihood, observed_traj, unobserved_traj, t, frames_dir, simple)
 
-    frame_source = os.path.join(f'{frames_dir}', 'frame_%03d.png')
-    video_destination = os.path.join(output_dir, f'video{i}.mp4')
-    command = ['ffmpeg', '-r', '10', '-i', frame_source, '-vcodec', 'libx264', '-pix_fmt', 'yuv420p', video_destination]
-    subprocess.run(command, check=True)
+    # frame_source = os.path.join(f'{frames_dir}', 'frame_%03d.png')
+    # video_destination = os.path.join(output_dir, f'video{i}.mp4')
+    # command = ['ffmpeg', '-r', '10', '-i', frame_source, '-vcodec', 'libx264', '-pix_fmt', 'yuv420p', video_destination]
+    # subprocess.run(command, check=True)
 
     
 def generate_frame(x, y, likelihood, observed_traj, unobserved_traj, t, output_dir, simple):

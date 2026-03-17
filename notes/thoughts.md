@@ -1,10 +1,12 @@
 # TODO
 
 ## Current Goal: 
-- [ ] Run Inference
-- [ ] Run Train
+- [ ] Slurm
+- [ ] Heatmap
+- [x] Run Inference
+- [x] Run Train
 
-- [ ] Run with AV2 Dataset
+- [x] Run with AV2 Dataset
 
 # NOTES
 

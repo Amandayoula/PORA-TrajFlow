@@ -103,6 +103,32 @@ class AV2:
     # ------------------------------------------------------------------
 
     def _load(self):
+        cache_path = os.path.join(self.root, "av2_cache.pt")
+
+        if os.path.exists(cache_path):
+            print("Loading AV2 from cache...")
+            positions, features = torch.load(cache_path, map_location="cpu")
+
+            # 重新构建 dataset / dataloader
+            dataset = torch.utils.data.TensorDataset(positions, features)
+
+            train_size = int(len(dataset) * self.train_ratio)
+            test_size = len(dataset) - train_size
+
+            train_dataset, test_dataset = torch.utils.data.random_split(
+                dataset, [train_size, test_size]
+            )
+
+            train_loader = torch.utils.data.DataLoader(
+                train_dataset, batch_size=self.train_batch_size, shuffle=True
+            )
+            test_loader = torch.utils.data.DataLoader(
+                test_dataset, batch_size=self.test_batch_size, shuffle=False
+            )
+
+            return AV2ObservationSite(spatial_boundaries, train_loader, test_loader)
+        
+        
         all_positions = []  # list of (1, TOTAL_STEPS, 2) arrays
         all_features  = []  # list of (1, HISTORY_STEPS, 5) arrays
 
@@ -179,6 +205,11 @@ class AV2:
 
         train_loader = DataLoader(train_dataset, batch_size=self.train_batch_size, shuffle=True)
         test_loader  = DataLoader(test_dataset,  batch_size=self.test_batch_size,  shuffle=True)
+
+        print(f"Total valid tracks: {len(positions)}")
+        print("Saving AV2 cache...")
+
+        torch.save((positions, features), cache_path)
 
         return AV2ObservationSite(spatial_boundaries, train_loader, test_loader)
 

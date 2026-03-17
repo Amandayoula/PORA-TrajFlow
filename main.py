@@ -12,15 +12,16 @@ from evaluate import evaluate
 from visualize import visualize
 from visualize_temp import visualize_temp
 from visualize_av2 import visualize_av2
+from visualize_av2_minimal import export_for_notebook
 
-should_train = True
+
+should_train = False
 should_serialize = True
-should_evaluate = False # True
-should_visualize = True
+should_evaluate = True
+should_visualize = False
 simple_visualization = False
 verbose = False
 marginal = True
-
 # with wandb.init() as run:
 with wandb.init(mode="offline") as run:
 	run.config.setdefaults({
@@ -88,7 +89,7 @@ with wandb.init(mode="offline") as run:
 		feature_dim = 5
 		embedding_dim = 128
 		hidden_dim = 512
-		training_epochs = 5
+		training_epochs = 100
 		evaulation_samples = 100
 		norm_rotate = False
 
@@ -98,6 +99,9 @@ with wandb.init(mode="offline") as run:
 			train_batch_size=64,
 			test_batch_size=1)
 		observation_site = av2.observation_site
+		print(len(observation_site.train_loader.dataset))
+		print(len(observation_site.test_loader.dataset))
+		
 		av2_map_root = av2.root
 	else:
 		raise ValueError(f'{dataset.name} is not an experiment dataset')
@@ -180,16 +184,24 @@ with wandb.init(mode="offline") as run:
 
 	if should_visualize:
 		if dataset == Dataset.AV2:
-			visualize_av2(
+			# visualize_av2(
+			# 	observation_site=observation_site,
+			# 	model=traj_flow,
+			# 	map_root=av2_map_root,
+			# 	num_samples=1, # 5
+	 		# 	steps=50, # 200
+			# 	prob_threshold=0.001,
+			# 	output_dir='visualization',
+			# 	simple=simple_visualization,
+			# 	device=device)
+			export_for_notebook(
 				observation_site=observation_site,
 				model=traj_flow,
-				map_root=av2_map_root,
-				num_samples=5,
-				steps=200,
-				prob_threshold=0.001,
-				output_dir='visualization',
-				simple=simple_visualization,
-				device=device)
+				num_samples=1,
+				steps=50,              
+				output_dir="visualization",
+				device=device,
+			)
 		else:
 			visualize(
 				observation_site=observation_site,
@@ -203,8 +215,8 @@ with wandb.init(mode="offline") as run:
 		# visualize_temp(
 		# 	data_loader=observation_site.test_loader,
 		# 	model=traj_flow,
-		# 	num_samples=20,
-		# 	steps=1000,
+		# 	num_samples=2,
+		# 	steps=100,
 		# 	prob_threshold=0.001,
 		# 	output_dir='visualization_temp',
 		# 	simple=simple_visualization,

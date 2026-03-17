@@ -2,6 +2,7 @@ __pycache__/
 visualization/
 wandb/
 notes/
+data/
 
 *.exe
 *.mp4
