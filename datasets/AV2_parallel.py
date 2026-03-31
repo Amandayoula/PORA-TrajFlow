@@ -68,6 +68,7 @@ class AV2ObservationSite:
 @dataclass(frozen=True)
 class _ParseConfig:
     object_types: Tuple[str, ...]
+    object_categories: Optional[Tuple[int, ...]]
 
 
 def _parse_one_parquet(parquet_path: str, cfg: _ParseConfig) -> Tuple[np.ndarray, np.ndarray]:
@@ -78,6 +79,14 @@ def _parse_one_parquet(parquet_path: str, cfg: _ParseConfig) -> Tuple[np.ndarray
     """
     df = pd.read_parquet(parquet_path)
     df = df[df["object_type"].isin(cfg.object_types)].copy()
+    # Optional filtering by AV2 track category (e.g., 1=UNSCORED, 2=SCORED, 3=FOCAL, 0=FRAGMENT).
+    # If your parquet doesn't have this column, leave object_categories=None.
+    if cfg.object_categories is not None:
+        if "object_category" not in df.columns:
+            raise KeyError(
+                "object_categories filtering requested, but parquet is missing 'object_category' column."
+            )
+        df = df[df["object_category"].isin(cfg.object_categories)].copy()
 
     positions_list: List[np.ndarray] = []
     features_list: List[np.ndarray] = []
@@ -125,6 +134,8 @@ class AV2:
     """
 
     DEFAULT_OBJECT_TYPES = ["vehicle"]
+    # Default to surrounding agents: UNSCORED(1) and SCORED(2). Excludes FRAGMENT(0) and FOCAL(3).
+    DEFAULT_OBJECT_CATEGORIES = (1, 2)
 
     def __init__(
         self,
@@ -133,6 +144,7 @@ class AV2:
         train_batch_size: int = 64,
         test_batch_size: int = 1,
         object_types: Optional[Iterable[str]] = None,
+        object_categories: Optional[Iterable[int]] = DEFAULT_OBJECT_CATEGORIES,
         max_scenarios: Optional[int] = None,
         num_workers: Optional[int] = None,
     ):
@@ -141,6 +153,9 @@ class AV2:
         self.train_batch_size = train_batch_size
         self.test_batch_size = test_batch_size
         self.object_types = tuple(object_types) if object_types is not None else tuple(self.DEFAULT_OBJECT_TYPES)
+        self.object_categories = (
+            None if object_categories is None else tuple(int(x) for x in object_categories)
+        )
         self.max_scenarios = max_scenarios
         self.num_workers = num_workers
         self._observation_site = None
@@ -192,6 +207,27 @@ class AV2:
             positions = cache["positions"]
             features = cache["features"]
             spatial_boundaries = cache["spatial_boundaries"]
+            cached_object_types = cache.get("object_types", None)
+            cached_object_categories = cache.get("object_categories", None)
+
+            # If cache was built with different filtering, rebuild to avoid silent mismatches.
+            if cached_object_types is not None and tuple(cached_object_types) != tuple(self.object_types):
+                print("AV2 cache object_types mismatch. Rebuilding cache...")
+                try:
+                    os.remove(cache_path)
+                except OSError:
+                    pass
+                return self._load()
+            if (
+                cached_object_categories is not None
+                and tuple(cached_object_categories) != (None if self.object_categories is None else tuple(self.object_categories))
+            ):
+                print("AV2 cache object_categories mismatch. Rebuilding cache...")
+                try:
+                    os.remove(cache_path)
+                except OSError:
+                    pass
+                return self._load()
 
             if not torch.is_tensor(positions):
                 positions = torch.as_tensor(positions)
@@ -222,7 +258,7 @@ class AV2:
         if not parquet_paths:
             raise ValueError("No parquet files found under train/ (check dataset root).")
 
-        cfg = _ParseConfig(object_types=self.object_types)
+        cfg = _ParseConfig(object_types=self.object_types, object_categories=self.object_categories)
         all_positions: List[np.ndarray] = []
         all_features: List[np.ndarray] = []
 
@@ -292,6 +328,10 @@ class AV2:
                 "positions": torch.as_tensor(positions_norm).float(),
                 "features": features_with_time.float(),
                 "spatial_boundaries": torch.as_tensor(spatial_boundaries).float(),
+                "object_types": list(self.object_types),
+                "object_categories": (
+                    None if self.object_categories is None else list(self.object_categories)
+                ),
             },
             cache_path,
         )

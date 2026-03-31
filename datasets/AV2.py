@@ -90,14 +90,17 @@ class AV2:
 
     # Object types to include (set to None to keep all)
     DEFAULT_OBJECT_TYPES = ['vehicle']
+    # Default to surrounding agents: UNSCORED(1) and SCORED(2). Excludes FRAGMENT(0) and FOCAL(3).
+    DEFAULT_OBJECT_CATEGORIES = (1, 2)
 
     def __init__(self, root, train_ratio=0.8, train_batch_size=64, test_batch_size=1,
-                 object_types=None, max_scenarios=None):
+                 object_types=None, object_categories=DEFAULT_OBJECT_CATEGORIES, max_scenarios=None):
         self.root              = root
         self.train_ratio       = train_ratio
         self.train_batch_size  = train_batch_size
         self.test_batch_size   = test_batch_size
         self.object_types      = object_types if object_types is not None else self.DEFAULT_OBJECT_TYPES
+        self.object_categories = None if object_categories is None else tuple(int(x) for x in object_categories)
         self.max_scenarios     = max_scenarios
         self._observation_site = None
 
@@ -302,6 +305,13 @@ class AV2:
 
         # Keep only requested object types
         df = df[df['object_type'].isin(self.object_types)].copy()
+        # Optional filtering by AV2 track category (e.g., 1=UNSCORED, 2=SCORED, 3=FOCAL, 0=FRAGMENT).
+        if self.object_categories is not None:
+            if "object_category" not in df.columns:
+                raise KeyError(
+                    "object_categories filtering requested, but parquet is missing 'object_category' column."
+                )
+            df = df[df["object_category"].isin(self.object_categories)].copy()
 
         positions_list = []
         features_list  = []

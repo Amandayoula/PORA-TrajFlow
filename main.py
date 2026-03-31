@@ -16,7 +16,7 @@ from visualize_av2 import visualize_av2
 from visualize_av2_minimal import export_for_notebook
 
 
-should_train = True
+should_train = False
 should_serialize = True
 should_evaluate = True
 should_visualize = False
@@ -27,14 +27,14 @@ marginal = True
 # AV2-specific switches
 # If True, main.py will NOT rebuild AV2 cache; it will load from an existing
 # .pt file and construct DataLoaders directly. You can change av2_cache_path.
-use_av2_cache_only = False
+use_av2_cache_only = True
 av2_cache_path = "data/av2_mf_tiny/av2_cache_2000.pt"
 # with wandb.init() as run:
 with wandb.init(mode="offline") as run:
 	run.config.setdefaults({
 		'seed': random.randint(0, 2**32 - 1),
-		'encoder': 'GRU',
-		'flow': 'DNF',
+		'encoder': 'CDE',
+		'flow': 'CNF',
 		'dataset': 'AV2',
 		'observation_site': 'zara2',
 		'masked_data_ratio': 0
@@ -98,7 +98,7 @@ with wandb.init(mode="offline") as run:
 		embedding_dim = 128
 		hidden_dim = 512
 		train_ratio = 0.8
-		training_epochs = 100
+		training_epochs = 40
 		evaulation_samples = 100
 		norm_rotate = False
 

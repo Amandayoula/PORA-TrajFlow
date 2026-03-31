@@ -10,3 +10,5 @@ data/
 *.pt
 *.pdf
 *.svg
+
+main.ipynb
