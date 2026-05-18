@@ -140,4 +140,4 @@ class DNF(nn.Module):
     
     def forward(self, z, condition, reverse=False, sampling_frequency=1):
         z, delta_logpz = self.net.inverse(z, condition, sampling_frequency) if reverse else self.net.forward(z, condition, sampling_frequency)
-        return z, torch.sum(-delta_logpz, dim=-1) #Negative to match CNF formulation
+        return z, torch.sum(-delta_logpz, dim=-1)

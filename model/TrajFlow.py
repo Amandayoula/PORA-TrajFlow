@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from model.encoder.GRU import GRU
 from model.encoder.CDE import CDE
-from model.flow.CNF import CNF
 from model.flow.DNF import DNF
+from model.flow.CNF import CNF
 
 from enum import Enum
 
@@ -131,27 +131,35 @@ class TrajFlow(nn.Module):
 			x, angle = self._normalize_rotation(x)
 			feat = self._rotate_features(feat, angle)
 
+		batch_size = x.size(0)
 		mean = (torch.zeros(futures, self.input_dim) if self.marginal else torch.zeros(self.seq_len * self.input_dim)).to(x.device)
 		variance = (torch.ones(futures, self.input_dim) if self.marginal else torch.ones(self.seq_len * self.input_dim)).to(x.device)
 		base_dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(variance))
 
-		y = torch.stack([base_dist.sample().to(x.device) for _ in range(num_samples)])
 		embedding = self._embedding(x, feat)
-		embedding = embedding.expand(y.shape[0], embedding.shape[1])
-		z, delta_logpz = self.flow(y, embedding, reverse=True, sampling_frequency=sampling_frequency)
+		condition = embedding.unsqueeze(0).expand(num_samples, batch_size, -1).reshape(num_samples * batch_size, -1)
+		y = base_dist.sample((num_samples, batch_size)).to(x.device)
+		flow_y = y.reshape(num_samples * batch_size, *y.shape[2:]) if self.marginal else y.reshape(num_samples * batch_size, -1)
+		z, delta_logpz = self.flow(flow_y, condition, reverse=True, sampling_frequency=sampling_frequency)
 
 		if not self.marginal:
-			output_shape = (x.size(0), num_samples, self.seq_len, 2)
-			z = z.view(*output_shape)
-			x_t = x[..., -1:, :].unsqueeze(dim=1).repeat(1, num_samples, 1, 1)
-			z = self._rel_to_abs(z, x_t)[0]
+			z = z.view(num_samples * batch_size, self.seq_len, self.input_dim)
+			x_t = x[..., -1:, :].unsqueeze(0).expand(num_samples, batch_size, 1, self.input_dim)
+			z = self._rel_to_abs(z, x_t.reshape(num_samples * batch_size, 1, self.input_dim))
+			z = z.view(num_samples, batch_size, self.seq_len, self.input_dim)
+		else:
+			z = z.view(num_samples, batch_size, futures, self.input_dim)
 
 		if self.norm_rotation:
-			x_t = x[..., -1:, :]
-			z = self._rotate(z, x_t, -1 * angle)
+			x_t = x[..., -1:, :].unsqueeze(0).expand(num_samples, batch_size, 1, self.input_dim)
+			z = self._rotate(
+				z.reshape(num_samples * batch_size, z.size(-2), self.input_dim),
+				x_t.reshape(num_samples * batch_size, 1, self.input_dim),
+				(-1 * angle).unsqueeze(0).expand(num_samples, batch_size).reshape(-1),
+			).view(num_samples, batch_size, z.size(-2), self.input_dim)
 		
-		y = y if self.marginal else y.view(y.shape[0], self.seq_len, self.input_dim)
-		z = z[:, :futures, :]
+		y = y if self.marginal else y.view(num_samples, batch_size, self.seq_len, self.input_dim)
+		z = z[:, :, :futures, :]
 		return y, z, delta_logpz
 
 	def log_prob(self, z_t0, delta_logpz):

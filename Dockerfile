@@ -15,7 +15,7 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 
 
 # Install dependencies
 RUN pip3 install torch --index-url https://download.pytorch.org/whl/cu118
-RUN pip install torchdiffeq wandb numpy pandas matplotlib
+RUN pip install torchdiffeq numpy pandas matplotlib pillow
 
 # Set the working directory
 WORKDIR /experiment
